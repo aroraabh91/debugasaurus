@@ -87,7 +87,7 @@ function activate (context) {
 }
 async function queryLLM(userMessage) {
   try {
-    const apiKey = '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'; // Replace with your API key
+    const apiKey = ''; // Replace with your API key
     const response = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       {
