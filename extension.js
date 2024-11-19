@@ -87,7 +87,7 @@ function activate (context) {
 }
 async function queryLLM(userMessage) {
   try {
-    const apiKey = ''; // Replace with your API key
+    const apiKey = ''; // Replace with your API key or else it won't work
     const response = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       {
