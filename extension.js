@@ -1,41 +1,53 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
-const vscode = require('vscode')
-const axios = require('axios');
-
-const { checkGitErrors } = require('./features/gitError');
-
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
+const vscode = require('vscode');
+const { spawn } = require('child_process');
+const path = require('path');
 
 /**
  * @param {vscode.ExtensionContext} context
  */
-function activate (context) {
-  console.log('Congratulations, your extension "debugasourus" is now active!')
-
-  // const disposable = vscode.commands.registerCommand(
-  //   'debugasourus.helloWorld',
-  //   function () {
-  //     console.log('WE CALLED')
-  //     vscode.window.showWarningMessage('Hello World from debugasourus!')
-  //   }
-  // )
+function activate(context) {
   let disposable = vscode.commands.registerCommand('debugasourus.startChat', () => {
     const panel = vscode.window.createWebviewPanel(
-      'chatInterface', 
-      'Chat Interface', 
-      vscode.ViewColumn.One, 
+      'chatInterface',
+      'Chat Interface',
+      vscode.ViewColumn.One,
       { enableScripts: true }
     );
+
     panel.webview.html = getWebviewContent();
 
     panel.webview.onDidReceiveMessage(
-      async (message) => {
+      (message) => {
         if (message.command === 'sendMessage') {
-          const userMessage = message.text;
-          const response = await queryLLM(userMessage);
-          panel.webview.postMessage({ command: 'receiveMessage', text: response });
+          const userInput = message.text;
+
+          // Call the Python script with the user's input
+          const pythonProcess = spawn('python', [
+            path.join(__dirname, 'openai_call.py'),
+            userInput,
+          ]);
+
+          let output = '';
+          pythonProcess.stdout.on('data', (data) => {
+            output += data.toString();
+          });
+
+          pythonProcess.stderr.on('data', (data) => {
+            vscode.window.showErrorMessage(`Error: ${data.toString()}`);
+          });
+
+          pythonProcess.on('close', (code) => {
+            try {
+              const result = JSON.parse(output);
+              if (result.error) {
+                vscode.window.showErrorMessage(`Error: ${result.error}`);
+              } else {
+                panel.webview.postMessage({ command: 'receiveMessage', text: result.response });
+              }
+            } catch (err) {
+              vscode.window.showErrorMessage(`Error parsing response: ${err.message}`);
+            }
+          });
         }
       },
       undefined,
@@ -43,63 +55,7 @@ function activate (context) {
     );
   });
 
-  const gitErrorCheck = vscode.commands.registerCommand(
-    'debugasourus.checkGitErrors',
-    async function () {
-      await checkGitErrors()
-    }
-  )
-
-  // const doSomething = vscode.commands.registerCommand(
-  //   'debugasourus.doSomething',
-  //   async function () {
-  //     console.log('WE CALLED 2')
-  //   }
-  // )
-
-  const provider1 = vscode.languages.registerCompletionItemProvider(
-    '*',
-    {
-      provideCompletionItems (document, position) {
-        const linePrefix = document
-          .lineAt(position)
-          .text.slice(0, position.character)
-
-        //   this only works when console. is detected
-        if (!linePrefix.endsWith('console.')) {
-          return undefined
-        }
-
-        // lets just see what the extension can see
-        console.log(document.getText())
-
-        return [
-          new vscode.CompletionItem('log', vscode.CompletionItemKind.Method),
-          new vscode.CompletionItem('warn', vscode.CompletionItemKind.Method),
-          new vscode.CompletionItem('error', vscode.CompletionItemKind.Method)
-        ]
-      }
-    },
-    '.' // triggered whenever a '.' is being typed
-  )
-
-  context.subscriptions.push(provider1, disposable, gitErrorCheck)
-}
-async function queryLLM(userMessage) {
-  try {
-    const apiKey = ''; // Replace with your API key or else it won't work
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: 'gpt-4',
-        messages: [{ role: 'user', content: userMessage }],
-      },
-      { headers: { Authorization: `Bearer ${apiKey}` } }
-    );
-    return response.data.choices[0].message.content.trim();
-  } catch (error) {
-    return `Error: ${error.message}`;
-  }
+  context.subscriptions.push(disposable);
 }
 
 function getWebviewContent() {
@@ -158,11 +114,6 @@ function getWebviewContent() {
   `;
 }
 
+function deactivate() {}
 
-// This method is called when your extension is deactivated
-function deactivate () {}
-
-module.exports = {
-  activate,
-  deactivate
-}
+module.exports = { activate, deactivate };
